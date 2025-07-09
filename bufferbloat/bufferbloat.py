@@ -198,8 +198,6 @@ def bufferbloat():
     # Sometimes they require manual killing.
     Popen("pgrep -f webserver.py | xargs kill -9", shell=True).wait()
 
-def 
-
 def teste():
 
     def print_info(host):
