@@ -28,7 +28,7 @@ args = parser.parse_args()
 def parse_ping(fname):
     ret = []
     lines = open(fname).readlines()
-    start_time = None
+    num = 0
     for line in lines:
         if 'bytes from' not in line:
             continue
@@ -36,10 +36,8 @@ def parse_ping(fname):
             rtt = line.split(' ')[-2]
             rtt = rtt.split('=')[1]
             rtt = float(rtt)
-            timestamp = float(line.split("]")[0][1:])
-            if start_time is None:
-                start_time = timestamp - rtt/1000
-            ret.append([timestamp-start_time,rtt])
+            ret.append([num, rtt])
+            num += 1
         except:
             break
     return ret
@@ -51,8 +49,7 @@ for i, f in enumerate(args.files):
     data = parse_ping(f)
     xaxis = list(map(float, list(col(0, data))))
     start_time = xaxis[0]
-    # print(data, start_time)
-    xaxis = list(xaxis)
+    xaxis = list(map(lambda x: (x - start_time) / args.freq, xaxis))
     qlens = list(map(float, col(1, data)))
 
     ax.plot(xaxis, qlens, lw=2)
