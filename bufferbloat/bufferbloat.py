@@ -47,10 +47,7 @@ parser.add_argument('--maxq',
                     help="Max buffer size of network interface in packets",
                     default=100)
 
-parser.add_argument('--n-pings',
-                    type=int,
-                    help="Number of pings to send on ping tests.",
-                    default=100)
+
 
 # Linux uses CUBIC-TCP by default that doesn't have the usual sawtooth
 # behaviour.  For those who are curious, invoke this script with
@@ -80,9 +77,9 @@ class BBTopo(Topo):
         # The parameter bw is expressed as a number in Mbit; delay is expressed as a string with units in place (e.g. '5ms', '100us', '1s'); 
         # loss is expressed as a percentage (between 0 and 100); and max_queue_size is expressed in packets.
 
-        print(f"Criando links com delay = {args.delay/4}ms")
-        self.addLink( h1, switch, bw=args.bw_host , delay=f"{args.delay/4}ms" )
-        self.addLink( switch, h2, bw=args.bw_net, delay=f"{args.delay/4}ms", max_queue_size=args.maxq, use_htb=True)
+        print(f"Criando links com delay = {args.delay}ms")
+        self.addLink( h1, switch, bw=args.bw_host , delay=f"{args.delay}ms" )
+        self.addLink( switch, h2, bw=args.bw_net, delay=f"{args.delay}ms", max_queue_size=args.maxq, use_htb=True)
 
 
 
@@ -94,30 +91,30 @@ def start_iperf(net):
     h1 = net.get('h1')
     h2 = net.get('h2')
 
-    print("Iniciando servidor IPERF3... em {h2.IP()}")
-    # For those who are curious about the -w 16m parameter, it ensures
-    # that the TCP flow is not receiver window limited.  If it is,
-    # there is a chance that the router buffer may not get filled up.
-    server = h2.popen("iperf3 -s -w 16m")
-    print(f"Servidor IPERF3 iniciado em {h2.IP()} ")
-
-    # TODO: Start the iperf client on h1.  Ensure that you create a
-    # long lived TCP flow.
-    print(f"Iniciando cliente em {h1.IP()}..")
-    client = h1.popen(f"iperf3 -c {h2.IP()} -tinf") 
-    print(f"Cliente iniciado em {h1.IP()}")
+    print(f"Iniciando servidor iperf em {h2.IP()}...")
+    # CLI(net)
+    server = h2.popen("iperf -s -w 16m")  # Servidor iperf padrão (porta 5001)
+    sleep(1)
+    # Verifica se o servidor está ouvindo
+    print(h2.cmd("netstat -tulnp | grep iperf || echo 'Servidor iperf não encontrado'"))
+    
+    print(f"Iniciando cliente iperf em {h1.IP()}...")
+    client = h1.popen(f"iperf -c {h2.IP()} -tinf")  # Fluxo longo (1 hora)
+    sleep(1)
+    # Verifica se o cliente está conectado
+    print(h1.cmd(f"netstat -tunp | grep iperf || echo 'Cliente iperf não conectado'"))
 
     return server, client
 
-def start_qmon(iface, interval_sec=0.1, outfile="q.txt"):
+def start_qmon(iface, interval_sec=0.1, outfile=f"{args.dir}/qlen{args.maxq}.txt"):
     monitor = Process(target=monitor_qlen,
                       args=(iface, interval_sec, outfile))
-    monitor.start()
+    monitor.start() # Terminate with monitor.terminate()
     return monitor
 
 
-ping_file = "ping_output.txt"
-def start_ping(net):
+
+def start_ping(net, ping_count=int(args.time/0.1)):
     # TODO: Start a ping train from h1 to h2 (or h2 to h1, does it
     # matter?)  Measure RTTs every 0.1 second.  Read the ping man page
     # to see how to do this.
@@ -127,17 +124,30 @@ def start_ping(net):
     # i.e. ping ... > /path/to/ping.
     h1 = net.get('h1')
     h2 = net.get('h2')
-    monitor = start_qmon(iface='s0-eth2',interval_sec=0.03)
-    ping_test = h1.popen(f"ping -c {args.n_pings} -i 0.1 -D {h2.IP()} > {ping_file}", shell=True)
-    ping_test.wait()
-    monitor.terminate()
-    pass
+    print("numero de pings = ", ping_count)
+    return h1.popen(f"ping -c {ping_count} -i 0.1 {h2.IP()} -D > {args.dir}/ping{args.maxq}.txt", shell=True)
 
 def start_webserver(net):
     h1 = net.get('h1')
+    print("Abrindo webserver em h1....")
     proc = h1.popen("python webserver.py", shell=True)
     sleep(1)
-    return [proc]
+    return proc
+
+def measure_page_dl(net):
+    h1 = net.get('h1')
+    h2 = net.get('h2')
+    
+       # Executa curl e captura exit code
+    curl_cmd = f"curl -o /dev/null -s -w '%{{time_total}}' {h1.IP()}"
+    while(1):
+
+        dl_time = h2.cmd(curl_cmd)
+        exit_code = int(h2.cmd('echo $?'))
+        if(exit_code==0):
+            return float(dl_time)
+        else:
+            print(f"Erro no download da página...tentando de novo... exitcode= {exit_code}")
 
 def bufferbloat():
     if not os.path.exists(args.dir):
@@ -146,22 +156,20 @@ def bufferbloat():
     topo = BBTopo()
     net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink)
     net.start()
-    # This dumps the topology and how nodes are interconnected through
-    # links.
+    
+    # Configuração básica
     dumpNodeConnections(net.hosts)
-    # This performs a basic all pairs ping test.
     net.pingAll()
 
-    # TODO: Start monitoring the queue sizes.  Since the switch I
-    # created is "s0", I monitor one of the interfaces.  Which
-    # interface?  The interface numbering starts with 1 and increases.
-    # Depending on the order you add links to your network, this
-    # number may be 1 or 2.  Ensure you use the correct number.
-    qmon = start_qmon(iface='s0-eth2',
-                      outfile='%s/q.txt' % (args.dir))
+    # Inicia monitoramento
+    qmon = start_qmon(iface='s0-eth2')
+    
+    # Inicia o webserver
+    webserver = start_webserver(net)
+    
+    # Verifica se o webserver está respondendo
+    print("Verificando webserver...", measure_page_dl())
 
-    # TODO: Start iperf, webservers, etc.
-    # start_iperf(net)
 
     # TODO: measure the time it takes to complete webpage transfer
     # from h1 to h2 (say) 3 times.  Hint: check what the following
@@ -198,7 +206,9 @@ def bufferbloat():
     # Sometimes they require manual killing.
     Popen("pgrep -f webserver.py | xargs kill -9", shell=True).wait()
 
-def teste():
+def ping_test():
+    if not os.path.exists(args.dir):
+        os.makedirs(args.dir)
 
     def print_info(host):
         print(f"Host {host.name} IP: {host.IP()}")
@@ -224,17 +234,87 @@ def teste():
     print("Iniciando conexão TCP...")
     server, client = start_iperf(net)
     print("Executando testes de ping e medições de fila...")
-    start_ping(net)
+    monitor = start_qmon('s0-eth2',interval_sec=0.05)
+    ping_process = start_ping(net)
+    ping_process.wait()
+    print("Fim do experimento.. liberando recursos")
+    monitor.kill()
 
     net.stop()
-    server.terminate()
-    client.terminate()
+    server.kill()
+    client.kill()
     # Ensure that all processes you create within Mininet are killed.
     # Sometimes they require manual killing.
     Popen("pgrep -f webserver.py | xargs kill -9", shell=True).wait()
 
 
-teste()
+def webserver_test():
+    if not os.path.exists(args.dir):
+        os.makedirs(args.dir)
+    os.system("sysctl -w net.ipv4.tcp_congestion_control=%s" % args.cong)
+    topo = BBTopo()
+    net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink)
+    net.start()
+    # This dumps the topology and how nodes are interconnected through
+    # links.
+    dumpNodeConnections(net.hosts)
+    # This performs a basic all pairs ping test.
+    net.pingAll()
+
+    # TODO: Start monitoring the queue sizes.  Since the switch I
+    # created is "s0", I monitor one of the interfaces.  Which
+    # interface?  The interface numbering starts with 1 and increases.
+    # Depending on the order you add links to your network, this
+    # number may be 1 or 2.  Ensure you use the correct number.
+    qmon = start_qmon(iface='s0-eth2',
+                      outfile='%s/q.txt' % (args.dir))
+
+    # TODO: Start iperf, webservers, etc.
+    # ping_server,client = start_iperf(net)
+    webserver = start_webserver(net)
+    print("tempo de dl: ", measure_page_dl(net))
+
+        
+    
+    
+    # TODO: measure the time it takes to complete webpage transfer
+    # from h1 to h2 (say) 3 times.  Hint: check what the following
+    # command does: curl -o /dev/null -s -w %{time_total} google.com
+    # Now use the curl command to fetch webpage from the webserver you
+    # spawned on host h1 (not from google!)
+    # Hint: Verify the url by running your curl command without the
+    # flags. The html webpage should be returned as the response.
+
+    # Hint: have a separate function to do this and you may find the
+    # loop below useful.
+    start_time = time()
+    measures = []
+    while True:
+        # Realizando 3 medições em 5 segundos:
+        measures.append(float(measure_page_dl(net)))
+        sleep(5/3)
+        now = time()
+        delta = now - start_time
+        if delta > args.time:
+            break
+        print("%.1fs left..." % (args.time - delta))
+
+    print(measures)
+    # TODO: compute average (and standard deviation) of the fetch
+    # times.  You don't need to plot them.  Just note it in your
+    # README and explain.
+
+    # Hint: The command below invokes a CLI which you can use to
+    # debug.  It allows you to run arbitrary commands inside your
+    # emulated hosts h1 and h2.
+    # CLI(net)
+    qmon.terminate()
+    net.stop()
+    # Ensure that all processes you create within Mininet are killed.
+    # Sometimes they require manual killing.
+    Popen("pgrep -f webserver.py | xargs kill -9", shell=True).wait()
+
+ping_test()
 
 # if __name__ == "__main__":
 #     bufferbloat()
