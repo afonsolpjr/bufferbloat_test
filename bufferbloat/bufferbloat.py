@@ -168,9 +168,11 @@ def bufferbloat():
     webserver = start_webserver(net)
     
     # Verifica se o webserver está respondendo
-    print("Verificando webserver...", measure_page_dl())
-
-
+    print("Verificando webserver...", measure_page_dl(net))
+    
+    #Inicia fluxos TCP
+    iperf_server,iperf_client = start_iperf(net)
+    CLI(net)
     # TODO: measure the time it takes to complete webpage transfer
     # from h1 to h2 (say) 3 times.  Hint: check what the following
     # command does: curl -o /dev/null -s -w %{time_total} google.com
@@ -314,7 +316,7 @@ def webserver_test():
     # Sometimes they require manual killing.
     Popen("pgrep -f webserver.py | xargs kill -9", shell=True).wait()
 
-ping_test()
+# ping_test()
 
-# if __name__ == "__main__":
-#     bufferbloat()
+if __name__ == "__main__":
+    bufferbloat()
