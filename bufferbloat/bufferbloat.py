@@ -183,8 +183,9 @@ def bufferbloat():
     # Hint: have a separate function to do this and you may find the
     # loop below useful.
 
-    start_ping(net)
     start_time = time()
+    start_ping(net)
+
     measures = []
     while True:
         # do the measurement (say) 3 times.
