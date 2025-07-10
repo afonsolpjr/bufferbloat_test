@@ -124,7 +124,7 @@ def start_ping(net, ping_count=int(args.time/0.1)):
     # i.e. ping ... > /path/to/ping.
     h1 = net.get('h1')
     h2 = net.get('h2')
-    print("numero de pings = ", ping_count)
+    print("Iniciando pings. numero de pings = ", ping_count)
     return h1.popen(f"ping -c {ping_count} -i 0.1 {h2.IP()} -D > {args.dir}/ping{args.maxq}.txt", shell=True)
 
 def start_webserver(net):
@@ -166,13 +166,12 @@ def bufferbloat():
     
     # Inicia o webserver
     webserver = start_webserver(net)
-    
     # Verifica se o webserver está respondendo
-    print("Verificando webserver...", measure_page_dl(net))
+    print("Verificando webserver... tempo de dl teste = ", measure_page_dl(net))
     
     #Inicia fluxos TCP
     iperf_server,iperf_client = start_iperf(net)
-    CLI(net)
+
     # TODO: measure the time it takes to complete webpage transfer
     # from h1 to h2 (say) 3 times.  Hint: check what the following
     # command does: curl -o /dev/null -s -w %{time_total} google.com
@@ -183,15 +182,22 @@ def bufferbloat():
 
     # Hint: have a separate function to do this and you may find the
     # loop below useful.
+
+    start_ping(net)
     start_time = time()
+    measures = []
     while True:
         # do the measurement (say) 3 times.
+        for i in range(0,3):
+            measures.append(measure_page_dl(net))
         sleep(5)
         now = time()
         delta = now - start_time
         if delta > args.time:
             break
         print("%.1fs left..." % (args.time - delta))
+
+    print("Tempos de download: \n", measures)
 
     # TODO: compute average (and standard deviation) of the fetch
     # times.  You don't need to plot them.  Just note it in your
@@ -250,71 +256,6 @@ def ping_test():
     Popen("pgrep -f webserver.py | xargs kill -9", shell=True).wait()
 
 
-def webserver_test():
-    if not os.path.exists(args.dir):
-        os.makedirs(args.dir)
-    os.system("sysctl -w net.ipv4.tcp_congestion_control=%s" % args.cong)
-    topo = BBTopo()
-    net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink)
-    net.start()
-    # This dumps the topology and how nodes are interconnected through
-    # links.
-    dumpNodeConnections(net.hosts)
-    # This performs a basic all pairs ping test.
-    net.pingAll()
-
-    # TODO: Start monitoring the queue sizes.  Since the switch I
-    # created is "s0", I monitor one of the interfaces.  Which
-    # interface?  The interface numbering starts with 1 and increases.
-    # Depending on the order you add links to your network, this
-    # number may be 1 or 2.  Ensure you use the correct number.
-    qmon = start_qmon(iface='s0-eth2',
-                      outfile='%s/q.txt' % (args.dir))
-
-    # TODO: Start iperf, webservers, etc.
-    # ping_server,client = start_iperf(net)
-    webserver = start_webserver(net)
-    print("tempo de dl: ", measure_page_dl(net))
-
-        
-    
-    
-    # TODO: measure the time it takes to complete webpage transfer
-    # from h1 to h2 (say) 3 times.  Hint: check what the following
-    # command does: curl -o /dev/null -s -w %{time_total} google.com
-    # Now use the curl command to fetch webpage from the webserver you
-    # spawned on host h1 (not from google!)
-    # Hint: Verify the url by running your curl command without the
-    # flags. The html webpage should be returned as the response.
-
-    # Hint: have a separate function to do this and you may find the
-    # loop below useful.
-    start_time = time()
-    measures = []
-    while True:
-        # Realizando 3 medições em 5 segundos:
-        measures.append(float(measure_page_dl(net)))
-        sleep(5/3)
-        now = time()
-        delta = now - start_time
-        if delta > args.time:
-            break
-        print("%.1fs left..." % (args.time - delta))
-
-    print(measures)
-    # TODO: compute average (and standard deviation) of the fetch
-    # times.  You don't need to plot them.  Just note it in your
-    # README and explain.
-
-    # Hint: The command below invokes a CLI which you can use to
-    # debug.  It allows you to run arbitrary commands inside your
-    # emulated hosts h1 and h2.
-    # CLI(net)
-    qmon.terminate()
-    net.stop()
-    # Ensure that all processes you create within Mininet are killed.
-    # Sometimes they require manual killing.
-    Popen("pgrep -f webserver.py | xargs kill -9", shell=True).wait()
 
 # ping_test()
 
