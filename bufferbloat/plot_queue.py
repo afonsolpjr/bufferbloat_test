@@ -54,9 +54,9 @@ def get_style(i):
     else:
         return {'color': 'black', 'ls': '-.'}
 
-m.rc('figure', figsize=(16, 6))
+m.rc('figure', figsize=(16, 10))
 fig = figure()
-ax = fig.add_subplot(111)
+ax = fig.add_subplot()
 for i, f in enumerate(args.files):
     data = read_list(f)
     xaxis = list(map(float, list(col(0, data))))
@@ -74,6 +74,8 @@ plt.grid(True)
 plt.xlabel("Seconds")
 
 if args.out:
+    qsize = args.out.split('q')[1].split('.')[0]
+    plt.title(f"Queue size for elapsed time. Q max_size = {qsize}")
     print('saving to', args.out)
     plt.savefig(args.out)
 else:

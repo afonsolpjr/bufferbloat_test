@@ -44,9 +44,9 @@ def parse_ping(fname):
             break
     return ret
 
-m.rc('figure', figsize=(16, 6))
+m.rc('figure', figsize=(16, 10))
 fig = figure()
-ax = fig.add_subplot(111)
+ax = fig.add_subplot()
 for i, f in enumerate(args.files):
     data = parse_ping(f)
     xaxis = list(map(float, list(col(0, data))))
@@ -60,8 +60,9 @@ for i, f in enumerate(args.files):
 
 plt.ylabel("RTT (ms)")
 plt.grid(True)
-
 if args.out:
+    qsize = args.out.split('q')[1].split('.')[0]
+    plt.title(f"RTT for elapsed time. Q max size = {qsize}")
     plt.savefig(args.out)
 else:
     plt.show()
