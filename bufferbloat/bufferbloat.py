@@ -16,6 +16,7 @@ from monitor import monitor_qlen
 import sys
 import os
 import math
+import numpy as np
 
 parser = ArgumentParser(description="Bufferbloat tests")
 parser.add_argument('--bw-host', '-B',
@@ -200,6 +201,9 @@ def bufferbloat():
 
     print("Tempos de download: \n", measures)
 
+    with open(f"{args.dir}/qlen{args.maxq}delays_medidos.txt", "w") as f:
+        print('Salvando tempos de download...')
+        f.write(f"Tempos de download: {measures}\nMédia: {np.mean(measures)}\nDesvio padrão: {np.std(measures)}\n")
     # TODO: compute average (and standard deviation) of the fetch
     # times.  You don't need to plot them.  Just note it in your
     # README and explain.
