@@ -78,7 +78,6 @@ class BBTopo(Topo):
         # The parameter bw is expressed as a number in Mbit; delay is expressed as a string with units in place (e.g. '5ms', '100us', '1s'); 
         # loss is expressed as a percentage (between 0 and 100); and max_queue_size is expressed in packets.
 
-        print(f"Criando links com delay = {args.delay}ms")
         self.addLink( h1, switch, bw=args.bw_host , delay=f"{args.delay}ms" )
         self.addLink( switch, h2, bw=args.bw_net, delay=f"{args.delay}ms", max_queue_size=args.maxq, use_htb=True)
 
@@ -92,14 +91,14 @@ def start_iperf(net):
     h1 = net.get('h1')
     h2 = net.get('h2')
 
-    print(f"Iniciando servidor iperf em {h2.IP()}...")
+    print(f"\n[ Iniciando servidor iperf em {h2.IP()} ] ...")
     # CLI(net)
     server = h2.popen("iperf -s -w 16m")  # Servidor iperf padrão (porta 5001)
     sleep(1)
     # Verifica se o servidor está ouvindo
     print(h2.cmd("netstat -tulnp | grep iperf || echo 'Servidor iperf não encontrado'"))
     
-    print(f"Iniciando cliente iperf em {h1.IP()}...")
+    print(f"[ Iniciando cliente iperf em {h1.IP()} ] ...")
     client = h1.popen(f"iperf -c {h2.IP()} -tinf")  # Fluxo longo (1 hora)
     sleep(1)
     # Verifica se o cliente está conectado
@@ -130,7 +129,7 @@ def start_ping(net, ping_count=int(args.time/0.1)):
 
 def start_webserver(net):
     h1 = net.get('h1')
-    print("Abrindo webserver em h1....")
+    print("\nAbrindo webserver em h1....")
     proc = h1.popen("python webserver.py", shell=True)
     sleep(1)
     return proc
@@ -153,13 +152,21 @@ def measure_page_dl(net):
 def bufferbloat():
     if not os.path.exists(args.dir):
         os.makedirs(args.dir)
+    # Inicialização
+    print("[Iniciando experimento.]",
+        f"\n[Controle de congestão= {args.cong}]",
+        f"\t[Tamanho da fila= {args.maxq}]",
+        f"\n[Duração={args.time}] \t[delay por link={args.delay}]\n")
+    
     os.system("sysctl -w net.ipv4.tcp_congestion_control=%s" % args.cong)
     topo = BBTopo()
     net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink)
     net.start()
     
     # Configuração básica
-    dumpNodeConnections(net.hosts)
+    # dumpNodeConnections(net.hosts)
+
+    #Teste de ping
     net.pingAll()
 
     # Inicia monitoramento
@@ -168,7 +175,7 @@ def bufferbloat():
     # Inicia o webserver
     webserver = start_webserver(net)
     # Verifica se o webserver está respondendo
-    print("Verificando webserver... tempo de dl teste = ", measure_page_dl(net))
+    print("\tVerificando webserver. Tempo teste de donwload = ", measure_page_dl(net))
     
     #Inicia fluxos TCP
     iperf_server,iperf_client = start_iperf(net)
@@ -198,8 +205,6 @@ def bufferbloat():
         if delta > args.time:
             break
         print("%.1fs left..." % (args.time - delta))
-
-    print("Tempos de download: \n", measures)
 
     with open(f"{args.dir}/qlen{args.maxq}delays_medidos.txt", "w") as f:
         print('Salvando tempos de download...')
