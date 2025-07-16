@@ -23,6 +23,10 @@ parser.add_argument('--out', '-o',
                     help="Output png file for the plot.",
                     default=None) # Will show the plot
 
+parser.add_argument('--cong',
+                    help="congestion control algorith used.",
+                    default=None,
+                    required=True)
 args = parser.parse_args()
 
 def parse_ping(fname):
@@ -62,7 +66,7 @@ plt.ylabel("RTT (ms)")
 plt.grid(True)
 if args.out:
     qsize = args.out.split('q')[1].split('.')[0]
-    plt.title(f"RTT for elapsed time. Q max size = {qsize}")
+    plt.title(f"RTT for elapsed time. Q max size = {qsize}. Control= {args.cong}")
     plt.savefig(args.out)
 else:
     plt.show()

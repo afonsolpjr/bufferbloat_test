@@ -40,6 +40,11 @@ parser.add_argument('--every',
                     default=1,
                     type=int)
 
+parser.add_argument('--cong',
+                    help="congestion control algorith used.",
+                    default=None,
+                    required=True)
+
 args = parser.parse_args()
 
 if args.legend is None:
@@ -75,7 +80,7 @@ plt.xlabel("Seconds")
 
 if args.out:
     qsize = args.out.split('q')[1].split('.')[0]
-    plt.title(f"Queue size for elapsed time. Q max_size = {qsize}")
+    plt.title(f"Queue size for elapsed time. Q max_size = {qsize}. Control= {args.cong}")
     print('saving to', args.out)
     plt.savefig(args.out)
 else:
