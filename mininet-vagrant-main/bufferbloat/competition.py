@@ -67,11 +67,12 @@ print(".")
 print(h2.cmd("netstat -tulpn"))
 
 test_duration = 10
-bbr_process= h1.popen(f"iperf -c {h2.IP()} -p {bbr_port} -i 0.1 -t {test_duration} --linux-congestion bbr | while read line; do echo \"$(date +%s.%N) $line\"; done > /tmp/bbr.txt", shell=True)
-reno_process= h1.popen(f"iperf -c {h2.IP()} -p {reno_port} -i 0.1 -t {test_duration} --linux-congestion reno| while read line; do echo \"$(date +%s.%N) $line\"; done > /tmp/reno.txt", shell=True)
+data_shared_dir = "/vagrant/bufferbloat/data"
+bbr_process= h1.popen(f"iperf -c {h2.IP()} -p {bbr_port} -i 0.1 -t {test_duration} --linux-congestion bbr | while read line; do echo \"$(date +%s.%N) $line\"; done > {data_shared_dir}/bbr.txt", shell=True)
+reno_process= h1.popen(f"iperf -c {h2.IP()} -p {reno_port} -i 0.1 -t {test_duration} --linux-congestion reno| while read line; do echo \"$(date +%s.%N) $line\"; done > {data_shared_dir}/reno.txt", shell=True)
 
 start_time=time()
-print("[Testes em execução]")
+print("[Testes em execução ihaa]")
 while (True):
     now=time()
     elapsed = now-start_time
@@ -88,9 +89,8 @@ net.stop()
 
 # Popen("cat /tmp/bbr.txt /tmp/reno.txt",shell=True).wait()
 
-Popen("sudo mv /tmp/bbr.txt /home/vagrant && sudo mv /tmp/reno.txt /home/vagrant",shell=True).wait()
-Popen("sudo chmod 666 bbr.txt reno.txt",shell=True).wait()
-Popen("sed -i '/sec/!d' reno.txt bbr.txt ", shell=True).wait()
+Popen(f"sudo chmod 666 {data_shared_dir}/bbr.txt {data_shared_dir}/reno.txt",shell=True).wait()
+Popen(f"sed -i '/sec/!d' {data_shared_dir}/reno.txt {data_shared_dir}/bbr.txt ", shell=True).wait()
 print("[Liberando recursos]")
 Popen("sudo mn -c 2> /dev/null", shell=True).wait()
 

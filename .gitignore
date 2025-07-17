@@ -1,1 +1,8 @@
-mininet-vagrant-main/*
+mininet-vagrant-main/README.md
+mininet-vagrant-main/.gitignore
+mininet-vagrant-main/Vagrantfile
+mininet-vagrant-main/bootstrap.sh
+mininet-vagrant-main/bufferbloat/data
+mininet-vagrant-main/bufferbloat/plots
+mininet-vagrant-main/bufferbloat/__pycache__
+mininet-vagrant-main/.vagrant

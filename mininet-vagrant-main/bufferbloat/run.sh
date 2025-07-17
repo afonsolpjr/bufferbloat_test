@@ -26,6 +26,7 @@ for qsize in 20 100; do
     # the required naming convention when submitting your tarball.
 
     mkdir -p plots
+
     python3 plot_queue.py -f $dir/qlen$qsize.txt -o plots/$cong-buffer-q$qsize.png --cong=$cong
     python3 plot_ping.py -f $dir/ping$qsize.txt -o plots/$cong-rtt-q$qsize.png --cong=$cong
 done
