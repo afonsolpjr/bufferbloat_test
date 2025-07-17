@@ -18,6 +18,11 @@ import os
 import math
 import numpy as np
 
+# Instalar Iperf3 mais recente (não tem no repositorio ubuntu/debian)
+# - Ver no final da pagina: https://iperf.fr/iperf-download.php
+#  Dei build from source com ./configure && make && make install
+# AI deu problema de biblioteca que resolvi com sudo apt-get install lib32z1
+
 # Classe da topologia
 class TopoComp(Topo):
     "Simple topology for tcp traffic competition experiment."
@@ -49,7 +54,7 @@ print('\n')
 
 h1 = net.get('h1')
 h2 = net.get('h2')
-
+# print(type(h1))
 # Abrindo servidores
 bbr_port=5001
 reno_port=5002
@@ -59,7 +64,33 @@ serv_bbr = h2.popen(f"iperf -s --port {bbr_port}")
 serv_reno = h2.popen(f"iperf -s --port {reno_port}")
 sleep(2)
 print(".")
-
 print(h2.cmd("netstat -tulpn"))
 
+test_duration = 10
+bbr_process= h1.popen(f"iperf -c {h2.IP()} -p {bbr_port} -i 0.1 -t {test_duration} --linux-congestion bbr | while read line; do echo \"$(date +%s.%N) $line\"; done > /tmp/bbr.txt", shell=True)
+reno_process= h1.popen(f"iperf -c {h2.IP()} -p {reno_port} -i 0.1 -t {test_duration} --linux-congestion reno| while read line; do echo \"$(date +%s.%N) $line\"; done > /tmp/reno.txt", shell=True)
+
+start_time=time()
+print("[Testes em execução]")
+while (True):
+    now=time()
+    elapsed = now-start_time
+    if(elapsed>=test_duration):
+        break
+    else:
+        print(f"\rTempo restante = {int(test_duration-elapsed)}seg", end='')
+        sleep(2)
+print("\n")
+bbr_process.wait()
+reno_process.wait()
+
+net.stop()
+
+# Popen("cat /tmp/bbr.txt /tmp/reno.txt",shell=True).wait()
+
+Popen("sudo mv /tmp/bbr.txt /home/vagrant && sudo mv /tmp/reno.txt /home/vagrant",shell=True).wait()
+Popen("sudo chmod 666 bbr.txt reno.txt",shell=True).wait()
+Popen("sed -i '/sec/!d' reno.txt bbr.txt ", shell=True).wait()
+print("[Liberando recursos]")
+Popen("sudo mn -c 2> /dev/null", shell=True).wait()
 
