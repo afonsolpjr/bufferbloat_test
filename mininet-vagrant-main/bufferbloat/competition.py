@@ -149,7 +149,7 @@ class Analyzer():
         # for row in self.iperfdata1.data: print(row)
         # dados de cada conexao ficam no atributo 'data' das conexoes.
 
-    def plot_comp(self,label):
+    def plot_timeseries(self,label):
         
         x1 = [ row["Time"] for row in self.iperfdata1.data]
         x2 = [ row["Time"] for row in self.iperfdata2.data]
@@ -165,6 +165,7 @@ class Analyzer():
         y1 = [ row[label] for row in self.iperfdata1.data]
         y2 = [ row[label] for row in self.iperfdata2.data]
 
+        plt.figure(figsize=(12, 5))  
         lines = plt.plot(x1, y1, x2, y2)
 
         l1,l2 = lines
@@ -189,8 +190,9 @@ class Analyzer():
         plt.legend()
         out = f"plots/{label}_{self.iperfdata1.algorithm_name}VS{self.iperfdata2.algorithm_name}.png"
         print(f"Salvando grafico {out}")
+        
         plt.savefig(out)  
-
+        plt.close()
         pass
 
     
@@ -217,7 +219,7 @@ sleep(2)
 print(".")
 print(h2.cmd("netstat -tulpn"))
 
-test_duration = 0.5
+test_duration = 30
 data_shared_dir = "/vagrant/bufferbloat/data"
 
 bbr_process= h1.popen(f"iperf -c {h2.IP()} -p {bbr_port} -i 0.1 -t {test_duration} --linux-congestion bbr | while read line; do echo \"$(date +%s.%N) $line\"; done > {data_shared_dir}/bbr.txt", shell=True)
@@ -248,8 +250,12 @@ Popen(f"sed -i '/sec\|Cwnd/!d' {data_shared_dir}/reno.txt {data_shared_dir}/bbr.
 Popen(f"sed -i -E 's/\\[ +/[/' {data_shared_dir}/reno.txt {data_shared_dir}/bbr.txt", shell=True ).wait()
 
 analise = Analyzer("bbr.txt","reno.txt")
-print("[Plotando graficos]")
-analise.plot_comp("Bandwidth")
+
+# print("[Plotando graficos]")
+
+# analise.plot_timeseries("Bandwidth")
+# analise.plot_timeseries("RTT")
+# analise.plot_timeseries("Rtry")
 
 print("[Liberando recursos]")
 Popen("sudo mn -c 2> /dev/null", shell=True).wait()
