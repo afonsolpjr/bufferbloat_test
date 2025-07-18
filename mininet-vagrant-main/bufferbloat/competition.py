@@ -17,6 +17,27 @@ import sys
 import os
 import math
 import numpy as np
+from argparse import ArgumentParser
+
+parser = ArgumentParser(description="Bufferbloat tests")
+parser.add_argument('--num-bbr', '-nbbr',
+                    help="Número de hosts executando TCP BBR",
+                    type=int,
+                    required=True)
+
+parser.add_argument('--num-reno', '-nreno',
+                    help="Número de hosts executando TCP Reno",
+                    type=int,
+                    required=True)
+
+parser.add_argument('--test-duration', '-t',
+                    help="Duração do teste",
+                    type=float,
+                    default=90)
+
+args = parser.parse_args()
+
+data_shared_dir = "/vagrant/bufferbloat/data"
 
 # Instalar Iperf3 mais recente (não tem no repositorio ubuntu/debian)
 # - Ver no final da pagina: https://iperf.fr/iperf-download.php
@@ -28,21 +49,15 @@ class TopoComp(Topo):
     "Simple topology for tcp traffic competition experiment."
 
     def build(self, n=2):
-        h1 = self.addHost( "h1" )
-        h2 = self.addHost( "h2" )
+        h1 = self.addHost("h1")
+        h2 = self.addHost("h2")
 
         # Here I have created a switch.  If you change its name, its
         # interface names will change from s0-eth1 to newname-eth1.
         switch = self.addSwitch('s0')
 
-        # self.addLink( node1, node2, bw=10, delay='5ms', max_queue_size=1000, loss=10, use_htb=True): 
-        # adds a bidirectional link with bandwidth, delay and loss characteristics, with a maximum queue size of 1000 
-        # packets using the Hierarchical Token Bucket rate limiter and netem delay/loss emulator. 
-        # The parameter bw is expressed as a number in Mbit; delay is expressed as a string with units in place (e.g. '5ms', '100us', '1s'); 
-        # loss is expressed as a percentage (between 0 and 100); and max_queue_size is expressed in packets.
-
-        self.addLink( h1, switch, bw=1000)
-        self.addLink( switch, h2, bw=1000)
+        self.addLink(h1, switch, bw=1000)
+        self.addLink(switch, h2, bw=1000)
 
 class Analyzer():
     
@@ -160,43 +175,49 @@ bbr_port=5001
 reno_port=5002
 print(f"h1 ip {h1.IP()}\nh2 ip {h2.IP()}")
 print("Abrindo servidores..",end='')
-serv_bbr = h2.popen(f"iperf -s --port {bbr_port}")
-serv_reno = h2.popen(f"iperf -s --port {reno_port}")
+
+bbr_processes = []
+for i in range(args.num_bbr):
+    processo = h1.popen(f"iperf -c {h2.IP()} -p {bbr_port} -i 0.1 -t {args.test_duration} --linux-congestion bbr | while read line; do echo \"$(date +%s.%N) $line\"; done > {data_shared_dir}/bbr{i+1}.txt", shell=True)
+    bbr_processes.append(processo)
+
+reno_processes = []
+for i in range(args.num_reno):
+    processo = h1.popen(f"iperf -c {h2.IP()} -p {reno_port} -i 0.1 -t {args.test_duration} --linux-congestion reno| while read line; do echo \"$(date +%s.%N) $line\"; done > {data_shared_dir}/reno{i+1}.txt", shell=True)
+    reno_processes.append(processo)
 sleep(2)
+
 print(".")
 print(h2.cmd("netstat -tulpn"))
-
-test_duration = 0.5
-data_shared_dir = "/vagrant/bufferbloat/data"
-
-bbr_process= h1.popen(f"iperf -c {h2.IP()} -p {bbr_port} -i 0.1 -t {test_duration} --linux-congestion bbr | while read line; do echo \"$(date +%s.%N) $line\"; done > {data_shared_dir}/bbr.txt", shell=True)
-reno_process= h1.popen(f"iperf -c {h2.IP()} -p {reno_port} -i 0.1 -t {test_duration} --linux-congestion reno| while read line; do echo \"$(date +%s.%N) $line\"; done > {data_shared_dir}/reno.txt", shell=True)
 
 start_time=time()
 print("[Testes em execução]")
 while (True):
     now=time()
     elapsed = now-start_time
-    if(elapsed>=test_duration):
+    if(elapsed>=args.test_duration):
         break
     else:
-        print(f"\rTempo restante = {int(test_duration-elapsed)}seg", end='')
+        print(f"\rTempo restante = {int(args.test_duration-elapsed)}seg", end='')
         sleep(1)
 print("\n")
-bbr_process.wait()
-reno_process.wait()
+
+for process in bbr_processes:
+    process.wait()
+for process in reno_processes:
+    process.wait()
 
 net.stop()
 
 # Popen("cat /tmp/bbr.txt /tmp/reno.txt",shell=True).wait()
 
-Popen(f"sudo chmod 666 {data_shared_dir}/bbr.txt {data_shared_dir}/reno.txt",shell=True).wait()
+Popen(f"sudo chmod 666 {data_shared_dir}/bbr*.txt {data_shared_dir}/reno*.txt",shell=True).wait()
 print("[Formatando dados]")
-Popen(f"sed -i '/sec\|Cwnd/!d' {data_shared_dir}/reno.txt {data_shared_dir}/bbr.txt ", shell=True).wait()
+Popen(f"sed -i '/sec\|Cwnd/!d' {data_shared_dir}/reno*.txt {data_shared_dir}/bbr*.txt ", shell=True).wait()
 
-Popen(f"sed -i -E 's/\\[ +/[/' {data_shared_dir}/reno.txt {data_shared_dir}/bbr.txt", shell=True ).wait()
+Popen(f"sed -i -E 's/\\[ +/[/' {data_shared_dir}/reno*.txt {data_shared_dir}/bbr*.txt", shell=True ).wait()
 
-
+# TODO: Parametrizar o analyzer para considerar todos os cenários
 analise = Analyzer("bbr.txt","reno.txt")
 
 
