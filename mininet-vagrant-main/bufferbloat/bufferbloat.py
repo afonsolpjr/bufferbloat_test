@@ -115,13 +115,6 @@ def start_qmon(iface, interval_sec=0.1, outfile=f"{args.dir}/qlen{args.maxq}.txt
 
 
 def start_ping(net, ping_count=int(args.time/0.1)):
-    # TODO: Start a ping train from h1 to h2 (or h2 to h1, does it
-    # matter?)  Measure RTTs every 0.1 second.  Read the ping man page
-    # to see how to do this.
-
-    # Hint: Use host.popen(cmd, shell=True).  If you pass shell=True
-    # to popen, you can redirect cmd's output using shell syntax.
-    # i.e. ping ... > /path/to/ping.
     h1 = net.get('h1')
     h2 = net.get('h2')
     print("Iniciando pings. numero de pings = ", ping_count)
@@ -180,17 +173,6 @@ def bufferbloat():
     #Inicia fluxos TCP
     iperf_server,iperf_client = start_iperf(net)
 
-    # TODO: measure the time it takes to complete webpage transfer
-    # from h1 to h2 (say) 3 times.  Hint: check what the following
-    # command does: curl -o /dev/null -s -w %{time_total} google.com
-    # Now use the curl command to fetch webpage from the webserver you
-    # spawned on host h1 (not from google!)
-    # Hint: Verify the url by running your curl command without the
-    # flags. The html webpage should be returned as the response.
-
-    # Hint: have a separate function to do this and you may find the
-    # loop below useful.
-
     start_time = time()
     start_ping(net)
 
@@ -209,14 +191,6 @@ def bufferbloat():
     with open(f"{args.dir}/qlen{args.maxq}delays_medidos.txt", "w") as f:
         print('Salvando tempos de download...')
         f.write(f"Tempos de download: {measures}\nMédia: {np.mean(measures)}\nDesvio padrão: {np.std(measures)}\n")
-    # TODO: compute average (and standard deviation) of the fetch
-    # times.  You don't need to plot them.  Just note it in your
-    # README and explain.
-
-    # Hint: The command below invokes a CLI which you can use to
-    # debug.  It allows you to run arbitrary commands inside your
-    # emulated hosts h1 and h2.
-    # CLI(net)
 
     qmon.terminate()
     net.stop()
