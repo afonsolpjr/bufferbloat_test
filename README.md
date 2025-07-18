@@ -54,7 +54,23 @@ Esse script também computa os tempos de downloads da página web que simulamos.
 
 
 #### run_bbr.sh (Parte 3)
+Pode ser executado com:
+```shell
+sudo ./run_bbr.sh
+```
 
+Gera exatamente as mesmas saídas que o script da seção anterior, mas na simulação utiliza o TCP BBR. Os nomes dos plots são prefixados com `bbr` ao invés de `reno`, e os dados textuais sobrescrevem os gerados pelo script anterior. Listando os gráficos de saída, temos:
+1. `bbr-buffer-q20.png`
+1. `bbr-rtt-q20.png`
+1. `bbr-buffer-q100.png`
+1. `bbr-rtt-q100.png`
+
+Nesse caso, os dados que obtivemos sobre os tempos de download da página web foram:
+
+| Tamanho da fila | Média | Desvio padrão |
+|-----------------|-------|----------------|
+| 20              | 2.29  | 0.75            |
+| 100             | 1.8 | 0.05           |
 
 #### run_competition.sh (Parte 4)
 
