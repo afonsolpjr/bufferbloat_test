@@ -1,6 +1,5 @@
 #!/bin/bash
-
-time=90
+time=60
 
 mkdir -p $dir
 

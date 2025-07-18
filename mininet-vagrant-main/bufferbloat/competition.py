@@ -84,7 +84,6 @@ class Analyzer():
         def __init__(self, filename):
             self.algorithm_name = filename.split(".")[0]
             self.data = self.parser(filename)
-            print(filename)
 
         # time [ID] Interval Transfer Bandwidth Write/Err Rtry Cwnd/RTT NetPwr
         def parser(self, filename):
@@ -95,7 +94,7 @@ class Analyzer():
 
             data = []
             for intervalo in dados['intervals']:
-                linha = {}
+                linha = {}  
                 linha['Time'] = start_timestamp + intervalo['sum']['start']
                 linha['Transfer'] = intervalo['sum']['bytes'] / 1e6 # MBytes
                 linha['Bandwidth'] = intervalo['sum']['bits_per_second'] / 1e6
@@ -142,12 +141,9 @@ class Analyzer():
         lines = plt.plot(*args_plot)
 
         for i, line in enumerate(lines):
-            algoritmo = self.iperfdata[i].algorithm_name[:-1]
-            if algoritmo == 'bbr':
-                cor = 'r'
-            else:
-                cor = 'b'
-            plt.setp(line, color=f'{cor}', label=f"{algoritmo}-{i}")
+            algoritmo = self.iperfdata[i].algorithm_name
+            cores = ['b', 'g', 'r', 'c', 'm', 'y']
+            plt.setp(line, color=f'{cores[i]}', label=f"{algoritmo}")
 
         plt.title(f"{label} on bbr vs reno",visible=True)
 
@@ -185,21 +181,21 @@ h1 = net.get('h1')
 h2 = net.get('h2')
 # print(type(h1))
 # Abrindo servidores
-bbr_port=5001
-reno_port=5002
+porta_inicial = 5000
 print(f"h1 ip {h1.IP()}\nh2 ip {h2.IP()}")
 print("Abrindo servidores..",end='')
-serv_bbr = h2.popen(f"iperf3 -s --port {bbr_port}")
-serv_reno = h2.popen(f"iperf3 -s --port {reno_port}")
+
+for i in range(args.num_bbr + args.num_reno):
+    h2.popen(f"iperf3 -s --port {porta_inicial + i}")
 
 bbr_processes = []
 for i in range(args.num_bbr):
-    processo = h1.popen(f"iperf3 -c {h2.IP()} --json -p {bbr_port} -i 0.1 -t {args.test_duration} --linux-congestion bbr > {data_shared_dir}/bbr{i+1}.json", shell=True)
+    processo = h1.popen(f"iperf3 -c {h2.IP()} --json -p {porta_inicial + i} -i 0.1 -t {args.test_duration} --linux-congestion bbr > {data_shared_dir}/bbr{i+1}.json", shell=True)
     bbr_processes.append(processo)
 
 reno_processes = []
 for i in range(args.num_reno):
-    processo = h1.popen(f"iperf3 -c {h2.IP()} --json -p {reno_port} -i 0.1 -t {args.test_duration} --linux-congestion reno > {data_shared_dir}/reno{i+1}.json", shell=True)
+    processo = h1.popen(f"iperf3 -c {h2.IP()} --json -p {args.num_bbr + porta_inicial + i} -i 0.1 -t {args.test_duration} --linux-congestion reno > {data_shared_dir}/reno{i+1}.json", shell=True)
     reno_processes.append(processo)
 sleep(2)
 
