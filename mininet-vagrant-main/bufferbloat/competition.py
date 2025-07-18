@@ -6,6 +6,8 @@ from mininet.log import lg, info
 from mininet.util import dumpNodeConnections
 from mininet.cli import CLI
 
+import matplotlib.pyplot as plt
+
 from subprocess import Popen, PIPE
 from time import sleep, time
 from multiprocessing import Process
@@ -59,6 +61,10 @@ class Analyzer():
             labels of data
         data : list[dict]
             rows of data (a dict). in a row, values are indexed by labels
+        
+
+        data labels: 
+            Time Transfer Bandwidth Rtry Cwnd/RTT 
         """
         def __init__(self, filename):
             self.algorithm_name = filename.split(".")[0]
@@ -81,7 +87,7 @@ class Analyzer():
                 values = line.split()
 
                 row = {}
-                # Time Transfer Bandwidth Rtry Cwnd/RTT 
+               
 
                 self.labels.append("Time")
                 row.update({"Time":float(values[0])})
@@ -91,9 +97,9 @@ class Analyzer():
                 # value in Mbytes
                 row.update({"Transfer":self.to_MB(float(values[4]),values[5])})
                 
-                self.labels.append("Bandwith")
+                self.labels.append("Bandwidth")
                 # values in Mbits
-                row.update({"Bandwith":self.to_mb(float(values[6]),values[7])})
+                row.update({"Bandwidth":self.to_mb(float(values[6]),values[7])})
                 
                 self.labels.append("Rtry")
                 row.update({"Rtry":int(values[9])})
@@ -105,7 +111,7 @@ class Analyzer():
                             
                 self.labels.append("RTT")
                 rtt = values[10].split("/")[1]
-                row.update({"RTT":float(rtt)})
+                row.update({"RTT":float(rtt)/1000})
 
                 data.append(row)
             
@@ -124,14 +130,14 @@ class Analyzer():
             return value
         
         def to_MB(self, value, unit):
-            if unit == "Kbites":
-                return value / 1e3
-            elif unit == "Mbytes":
-                return value 
-            elif unit == "Gbytes":
-                return value * 1e3
+            if unit == "KBytes":
+                return value / 1024
+            elif unit == "MBytes":
+                return value
+            elif unit == "GBytes":
+                return value * 1024
             elif unit == "Bytes":
-                return value / 1e6
+                return value / (1024 * 1024)
             return value
         
         # End of data class
@@ -140,7 +146,52 @@ class Analyzer():
         self.iperfdata1 = Analyzer.IperfData(file1)
         self.iperfdata2 = Analyzer.IperfData(file2)
         
-        # dados de cada conexao ficam no atributo 'data' das conexoes. 
+        # for row in self.iperfdata1.data: print(row)
+        # dados de cada conexao ficam no atributo 'data' das conexoes.
+
+    def plot_comp(self,label):
+        
+        x1 = [ row["Time"] for row in self.iperfdata1.data]
+        x2 = [ row["Time"] for row in self.iperfdata2.data]
+        start_time = x1[0] if x1[0]<x2[0] else x2[0]
+           
+
+        start_time-=0.1 #INTERVALO DAS MEDIÇÕES DO IPERF. SE MUDAR, TEM QUE MUDAR AQUI TB!
+        # Colocando os eixos um em relação ao outro, usando os timestamps
+        for i in range(0,len(x1)):
+            x1[i]-=start_time
+            x2[i]-=start_time
+    
+        y1 = [ row[label] for row in self.iperfdata1.data]
+        y2 = [ row[label] for row in self.iperfdata2.data]
+
+        lines = plt.plot(x1, y1, x2, y2)
+
+        l1,l2 = lines
+        plt.setp(l1,color='r',label=f"{self.iperfdata1.algorithm_name}")
+        plt.setp(l2,color='b',label=f"{self.iperfdata2.algorithm_name}")
+        plt.title(f"{label} on {self.iperfdata1.algorithm_name} vs {self.iperfdata2.algorithm_name}",visible=True)
+
+        if label == "Bandwidth":
+            ylabel = "Bandwidth (Mb/sec)"
+        elif label == "Cwnd":
+            ylabel = "Cwnd (KB/sec)"
+        elif label == "RTT":
+            ylabel = "RTT (ms)"
+        elif label == "Transfer":
+            ylabel = "Transferred Data (MB)"
+        else:
+            ylabel = label
+
+        plt.xlabel("Time elapsed (sec)")
+        plt.ylabel(ylabel)
+        plt.grid()
+        plt.legend()
+        out = f"plots/{label}_{self.iperfdata1.algorithm_name}VS{self.iperfdata2.algorithm_name}.png"
+        print(f"Salvando grafico {out}")
+        plt.savefig(out)  
+
+        pass
 
     
 
@@ -196,9 +247,9 @@ Popen(f"sed -i '/sec\|Cwnd/!d' {data_shared_dir}/reno.txt {data_shared_dir}/bbr.
 
 Popen(f"sed -i -E 's/\\[ +/[/' {data_shared_dir}/reno.txt {data_shared_dir}/bbr.txt", shell=True ).wait()
 
-
 analise = Analyzer("bbr.txt","reno.txt")
-
+print("[Plotando graficos]")
+analise.plot_comp("Bandwidth")
 
 print("[Liberando recursos]")
 Popen("sudo mn -c 2> /dev/null", shell=True).wait()
