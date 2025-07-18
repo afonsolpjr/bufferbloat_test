@@ -48,12 +48,6 @@ parser.add_argument('--maxq',
                     help="Max buffer size of network interface in packets",
                     default=100)
 
-
-
-# Linux uses CUBIC-TCP by default that doesn't have the usual sawtooth
-# behaviour.  For those who are curious, invoke this script with
-# --cong cubic and see what happens...
-# sysctl -a | grep cong should list some interesting parameters.
 parser.add_argument('--cong',
                     help="Congestion control algorithm to use",
                     default="reno")
@@ -65,27 +59,13 @@ class BBTopo(Topo):
     "Simple topology for bufferbloat experiment."
 
     def build(self, n=2):
-        h1 = self.addHost( "h1" )
-        h2 = self.addHost( "h2" )
+        h1 = self.addHost("h1")
+        h2 = self.addHost("h2")
 
-        # Here I have created a switch.  If you change its name, its
-        # interface names will change from s0-eth1 to newname-eth1.
         switch = self.addSwitch('s0')
 
-        # self.addLink( node1, node2, bw=10, delay='5ms', max_queue_size=1000, loss=10, use_htb=True): 
-        # adds a bidirectional link with bandwidth, delay and loss characteristics, with a maximum queue size of 1000 
-        # packets using the Hierarchical Token Bucket rate limiter and netem delay/loss emulator. 
-        # The parameter bw is expressed as a number in Mbit; delay is expressed as a string with units in place (e.g. '5ms', '100us', '1s'); 
-        # loss is expressed as a percentage (between 0 and 100); and max_queue_size is expressed in packets.
-
-        self.addLink( h1, switch, bw=args.bw_host , delay=f"{args.delay}ms" )
-        self.addLink( switch, h2, bw=args.bw_net, delay=f"{args.delay}ms", max_queue_size=args.maxq, use_htb=True)
-
-
-
-# Simple wrappers around monitoring utilities.  You are welcome to
-# contribute neatly written (using classes) monitoring scripts for
-# Mininet!
+        self.addLink(h1, switch, bw=args.bw_host , delay=f"{args.delay}ms")
+        self.addLink(switch, h2, bw=args.bw_net, delay=f"{args.delay}ms", max_queue_size=args.maxq, use_htb=True)
 
 def start_iperf(net):
     h1 = net.get('h1')
@@ -155,9 +135,6 @@ def bufferbloat():
     topo = BBTopo()
     net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink)
     net.start()
-    
-    # Configuração básica
-    # dumpNodeConnections(net.hosts)
 
     #Teste de ping
     net.pingAll()
@@ -165,21 +142,19 @@ def bufferbloat():
     # Inicia monitoramento
     qmon = start_qmon(iface='s0-eth2')
     
-    # Inicia o webserver
-    webserver = start_webserver(net)
-    # Verifica se o webserver está respondendo
-    print("\tVerificando webserver. Tempo teste de donwload = ", measure_page_dl(net))
-    
-    #Inicia fluxos TCP
-    iperf_server,iperf_client = start_iperf(net)
-
-    start_time = time()
+    #Inicia fluxos TCP, pings e servidor web
+    start_iperf(net)
     start_ping(net)
+    start_webserver(net)
 
+    # Verifica se o webserver está respondendo
+    print("\tVerificando webserver. Tempo teste de download = ", measure_page_dl(net))
+    
+    start_time = time()
     measures = []
     while True:
         # do the measurement (say) 3 times.
-        for i in range(0,3):
+        for _ in range(0,3):
             measures.append(measure_page_dl(net))
         sleep(5)
         now = time()
@@ -194,54 +169,9 @@ def bufferbloat():
 
     qmon.terminate()
     net.stop()
-    # Ensure that all processes you create within Mininet are killed.
-    # Sometimes they require manual killing.
+    # Garante que todos os processos criados no mininet sejam encerrados.
+    # Às vezes eles precisam ser encerrados manualmente.
     Popen("pgrep -f webserver.py | xargs kill -9", shell=True).wait()
-
-def ping_test():
-    if not os.path.exists(args.dir):
-        os.makedirs(args.dir)
-
-    def print_info(host):
-        print(f"Host {host.name} IP: {host.IP()}")
-        print(f"Host {host.name} MAC: {host.MAC()}\n___________")
-    
-    os.system("sysctl -w net.ipv4.tcp_congestion_control=%s" % args.cong)
-    topo = BBTopo()
-    net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink)
-    net.start()
-    
-    print("Endereços IP e MAC dos Hosts:")
-    for host in net.hosts:
-        print_info(host)
-
-    print("Conexões:")
-    # This dumps the topology and how nodes are interconnected through links.
-    dumpNodeConnections(net.hosts)
-
-    print("Testando ping entre todos os nós....")
-    # This performs a basic all pairs ping test.
-    net.pingAll()
-    
-    print("Iniciando conexão TCP...")
-    server, client = start_iperf(net)
-    print("Executando testes de ping e medições de fila...")
-    monitor = start_qmon('s0-eth2',interval_sec=0.05)
-    ping_process = start_ping(net)
-    ping_process.wait()
-    print("Fim do experimento.. liberando recursos")
-    monitor.kill()
-
-    net.stop()
-    server.kill()
-    client.kill()
-    # Ensure that all processes you create within Mininet are killed.
-    # Sometimes they require manual killing.
-    Popen("pgrep -f webserver.py | xargs kill -9", shell=True).wait()
-
-
-
-# ping_test()
 
 if __name__ == "__main__":
     bufferbloat()
