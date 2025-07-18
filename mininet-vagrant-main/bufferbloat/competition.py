@@ -1,12 +1,6 @@
-from mininet.topo import Topo
-from mininet.node import CPULimitedHost
-from mininet.link import TCLink
-from mininet.net import Mininet
-from mininet.log import lg, info
-from mininet.util import dumpNodeConnections
-from mininet.cli import CLI
 
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 from subprocess import Popen, PIPE
 from time import sleep, time
@@ -38,30 +32,47 @@ parser.add_argument('--test-duration', '-t',
                     type=float,
                     default=60)
 
+parser.add_argument('-bw',
+                    help="largura da banda dos links, em Mbits",
+                    type=float,
+                    default=1000)
+
+parser.add_argument('--task',
+                    help="Tarefa a se fazer. valores possiveis: \"net\" para execucao da simulacao, \"gif\" para gerar o plot animado de fairness",
+                    type=str,
+                    default="net")
+
 args = parser.parse_args()
 
-data_shared_dir = "/vagrant/bufferbloat/data"
-os.makedirs(data_shared_dir, exist_ok=True)
+if(args.task=="net"):
+    data_shared_dir = "/vagrant/bufferbloat/data"
+    os.makedirs(data_shared_dir, exist_ok=True)
+    from mininet.topo import Topo
+    from mininet.node import CPULimitedHost
+    from mininet.link import TCLink
+    from mininet.net import Mininet
+    from mininet.log import lg, info
+    from mininet.util import dumpNodeConnections
+    from mininet.cli import CLI
+    
+    # Classe da topologia
+    class TopoComp(Topo):
+        "Simple topology for tcp traffic competition experiment."
 
-# Instalar Iperf3 mais recente (não tem no repositorio ubuntu/debian)
-# - Ver no final da pagina: https://iperf.fr/iperf-download.php
-#  Dei build from source com ./configure && make && make install
-# AI deu problema de biblioteca que resolvi com sudo apt-get install lib32z1
+        def build(self, n=2):
+            h1 = self.addHost("h1")
+            h2 = self.addHost("h2")
 
-# Classe da topologia
-class TopoComp(Topo):
-    "Simple topology for tcp traffic competition experiment."
+            # Here I have created a switch.  If you change its name, its
+            # interface names will change from s0-eth1 to newname-eth1.
+            switch = self.addSwitch('s0')
 
-    def build(self, n=2):
-        h1 = self.addHost("h1")
-        h2 = self.addHost("h2")
+            self.addLink(h1, switch, bw=args.bw)
+            self.addLink(switch, h2, bw=args.bw)
 
-        # Here I have created a switch.  If you change its name, its
-        # interface names will change from s0-eth1 to newname-eth1.
-        switch = self.addSwitch('s0')
 
-        self.addLink(h1, switch, bw=1000)
-        self.addLink(switch, h2, bw=1000)
+
+
 
 class Analyzer():
     
@@ -95,7 +106,7 @@ class Analyzer():
             data = []
             for intervalo in dados['intervals']:
                 linha = {}  
-                linha['Time'] = start_timestamp + intervalo['sum']['start']
+                linha['Time'] = start_timestamp + intervalo['sum']['end']
                 linha['Transfer'] = intervalo['sum']['bytes'] / 1e6 # MBytes
                 linha['Bandwidth'] = intervalo['sum']['bits_per_second'] / 1e6
                 linha['Rtry'] = intervalo['sum']['retransmits']
@@ -119,6 +130,8 @@ class Analyzer():
             self.iperfdata.append(Analyzer.IperfData(file))
 
     def plot_timeseries(self,label):
+        if not os.path.exists("plots"):
+            os.makedirs("plots")
         xs = []
         for iperfdata in self.iperfdata:
             xs.append([row["Time"] for row in iperfdata.data])
@@ -169,73 +182,164 @@ class Analyzer():
         plt.close()
         pass
 
-# Iniciando mininet
+    def fairness_plot(self):
+        if not os.path.exists("plots"):
+            os.makedirs("plots")
+        # plotar x+y = bw
 
-print("[ Iniciando uma rede simples ]")
-net = Mininet(topo=TopoComp(),host=CPULimitedHost, link=TCLink)
-net.start()
-net.pingAll()
-print('\n')
+        # 1 linha: eficiencie
+        # 2 linha, justica
+        plt.figure(figsize=(10,10))
+        lines = plt.plot([0,args.bw],[args.bw,0],[0,args.bw/2],[0,args.bw/2])
+        efficiency,justice = lines
+        plt.setp([efficiency,justice], color='black')
 
-h1 = net.get('h1')
-h2 = net.get('h2')
-# print(type(h1))
-# Abrindo servidores
-porta_inicial = 5000
-print(f"h1 ip {h1.IP()}\nh2 ip {h2.IP()}")
-print("Abrindo servidores..",end='')
+        # eixo x: data[0]   eixo y: data[1]
+        plt.xlabel(f"Bandwidth(Mb/sec) - TCP {self.iperfdata[0].algorithm_name[:-1]}")
+        plt.ylabel(f"Bandwidth(Mb/sec) - TCP {self.iperfdata[1].algorithm_name[:-1]}")
+        plt.savefig("plots/teste.png")
+        plt.close()
+        pass
+    
+    def fairness_animation(self):
+        xs = [row["Bandwidth"] for row in self.iperfdata[0].data]  # Reno
+        ys = [row["Bandwidth"] for row in self.iperfdata[1].data]  # BBR
+        
+        fig, ax = plt.subplots(figsize=(10, 10))
+        
+        # Linhas de referência
+        ax.plot([0, args.bw], [args.bw, 0], 'r--', label=f'Eficiência (x+y={args.bw} Mbps)')
+        ax.plot([0, args.bw/2], [0, args.bw/2], 'g--', label='Justiça (x=y)')
+        ax.set_xlim(0, args.bw)
+        ax.set_ylim(0, args.bw)
+        ax.set_xlabel(f"TCP {self.iperfdata[0].algorithm_name} (Mbps)")
+        ax.set_ylabel(f"TCP {self.iperfdata[1].algorithm_name} (Mbps)")
+        
+        
+        # Scatter com trajetória
+        scat = ax.scatter([], [], c='b', s=50, label='Instante atual')
+        line, = ax.plot([], [], 'b-', alpha=0.5, lw=2, label='Trajetória')  # Linha da trajetória
+        
+        # Anotações
+        frame_text = ax.annotate(
+            f"Tempo: 0s/{args.test_duration}s",
+            xy=(0.02, 0.95),
+            xycoords='axes fraction',
+            fontsize=12,
+            bbox=dict(boxstyle="round", fc="w"))
+        
+        ax.grid(True)
+        ax.legend()
 
-for i in range(args.num_bbr + args.num_reno):
-    h2.popen(f"iperf3 -s --port {porta_inicial + i}")
+        def update(frame):
+            # Atualiza scatter e trajetória
+            scat.set_offsets([[xs[frame], ys[frame]]])
+            line.set_data(xs[:frame+1], ys[:frame+1])
+            
+            # Atualiza anotação com tempo real
+            time_elapsed = self.iperfdata[0].data[frame]["Time"] - self.iperfdata[0].data[0]["Time"]
+            frame_text.set_text(f"Tempo: {time_elapsed:.1f}s/{args.test_duration}s")
+            
+            return scat, line, frame_text
+        
+        ani = animation.FuncAnimation(
+            fig, update, frames=len(xs), 
+            interval=50,  # 20 FPS
+            blit=True
+        )
+        print("[Criando animação]")
+        ani.save("plots/fairness_animation.gif")
+        plt.close()
 
-bbr_processes = []
-for i in range(args.num_bbr):
-    processo = h1.popen(f"iperf3 -c {h2.IP()} --json -p {porta_inicial + i} -i 0.1 -t {args.test_duration} --linux-congestion bbr > {data_shared_dir}/bbr{i+1}.json", shell=True)
-    bbr_processes.append(processo)
+# experimentos:
+def start_net():
+    # Iniciando mininet
+    print("[ Iniciando uma rede simples ]")
+    net = Mininet(topo=TopoComp(),host=CPULimitedHost, link=TCLink)
+    net.start()
+    net.pingAll()
+    print('\n')
+    return net
 
-reno_processes = []
-for i in range(args.num_reno):
-    processo = h1.popen(f"iperf3 -c {h2.IP()} --json -p {args.num_bbr + porta_inicial + i} -i 0.1 -t {args.test_duration} --linux-congestion reno > {data_shared_dir}/reno{i+1}.json", shell=True)
-    reno_processes.append(processo)
-sleep(2)
+def analytics(data_dir):
 
-print(".")
-print(h2.cmd("netstat -tulpn"))
+    # Popen("cat /tmp/bbr.json /tmp/reno.json",shell=True).wait()
 
-start_time=time()
-print("[Testes em execução]")
-while (True):
-    now=time()
-    elapsed = now-start_time
-    if(elapsed>=args.test_duration):
-        break
-    else:
-        print(f"\rTempo restante = {int(args.test_duration-elapsed)}seg", end='')
-        sleep(1)
-print("\n")
+    Popen(f"sudo chmod 666 {data_dir}/bbr*.json {data_dir}/reno*.json",shell=True).wait()
+    print("[Formatando dados]")
+    #Popen(f"sed -i '/sec\|Cwnd/!d' {data_shared_dir}/reno*.json {data_shared_dir}/bbr*.json ", shell=True).wait()
 
-for process in bbr_processes:
-    process.wait()
-for process in reno_processes:
-    process.wait()
+    # TODO: Parametrizar o analyzer para considerar todos os cenários
+    analise = Analyzer()
 
-net.stop()
+    # print("[Plotando graficos]")
 
-# Popen("cat /tmp/bbr.json /tmp/reno.json",shell=True).wait()
+    analise.plot_timeseries("Bandwidth")
+    analise.plot_timeseries("RTT")
+    analise.plot_timeseries("Rtry")
 
-Popen(f"sudo chmod 666 {data_shared_dir}/bbr*.json {data_shared_dir}/reno*.json",shell=True).wait()
-print("[Formatando dados]")
-#Popen(f"sed -i '/sec\|Cwnd/!d' {data_shared_dir}/reno*.json {data_shared_dir}/bbr*.json ", shell=True).wait()
+    # analise.fairness_animation()  # Impossivel rodar na VM, demora muito. 
+    # acho que é pq falta uma biblioteca (ffmpeg)e o matplotlib usa outra de plano B(Pillow), que nao é mt eficiente
 
-# TODO: Parametrizar o analyzer para considerar todos os cenários
-analise = Analyzer()
+def experiment():
+    net = start_net()
+    h1 = net.get('h1')
+    h2 = net.get('h2')
+ 
+    # Abrindo servidores
+    porta_inicial = 5000
+    print("Abrindo servidores no host2..",end='')
 
-# print("[Plotando graficos]")
+    for i in range(args.num_bbr + args.num_reno):
+        h2.popen(f"iperf3 -s --port {porta_inicial + i}")
+    print(".")
+    print(h2.cmd("netstat -tulpn"))
 
-analise.plot_timeseries("Bandwidth")
-analise.plot_timeseries("RTT")
-analise.plot_timeseries("Rtry")
+    # Fluxos
+    print("[Iniciando fluxos]")
+    bbr_processes = []
+    for i in range(args.num_bbr):
+        processo = h1.popen(f"iperf3 -c {h2.IP()} --json -p {porta_inicial + i} -i 0.1 -t {args.test_duration} --linux-congestion bbr > {data_shared_dir}/bbr{i+1}.json", shell=True)
+        bbr_processes.append(processo)
 
-print("[Liberando recursos]")
-Popen("sudo mn -c 2> /dev/null", shell=True).wait()
+    reno_processes = []
+    for i in range(args.num_reno):
+        processo = h1.popen(f"iperf3 -c {h2.IP()} --json -p {args.num_bbr + porta_inicial + i} -i 0.1 -t {args.test_duration} --linux-congestion reno > {data_shared_dir}/reno{i+1}.json", shell=True)
+        reno_processes.append(processo)
+    sleep(2)
 
+    # Contador
+    start_time=time()
+    print("[Testes em execução]")
+    while (True):
+        now=time()
+        elapsed = now-start_time
+        if(elapsed>=args.test_duration):
+            break
+        else:
+            print(f"\rTempo restante = {int(args.test_duration-elapsed)}seg", end='')
+            sleep(1)
+    print("\n")
+
+
+    analytics(data_shared_dir)
+    #Finalização
+    print("[Liberando recursos]")
+    for process in bbr_processes:
+        process.wait()
+    for process in reno_processes:
+        process.wait()
+
+    net.stop()
+
+def create_gif():
+    analise = Analyzer()
+    analise.fairness_animation()
+
+
+
+if(args.task=="net"):
+    experiment()
+else:
+    data_shared_dir = "./data"
+    create_gif()
