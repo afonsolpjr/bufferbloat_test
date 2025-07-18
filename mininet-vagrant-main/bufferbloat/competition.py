@@ -20,6 +20,7 @@ import os
 import math
 import numpy as np
 from argparse import ArgumentParser
+import json
 
 parser = ArgumentParser(description="Bufferbloat tests")
 parser.add_argument('--num-bbr', '-nbbr',
@@ -35,11 +36,12 @@ parser.add_argument('--num-reno', '-nreno',
 parser.add_argument('--test-duration', '-t',
                     help="Duração do teste",
                     type=float,
-                    default=90)
+                    default=60)
 
 args = parser.parse_args()
 
 data_shared_dir = "/vagrant/bufferbloat/data"
+os.makedirs(data_shared_dir, exist_ok=True)
 
 # Instalar Iperf3 mais recente (não tem no repositorio ubuntu/debian)
 # - Ver no final da pagina: https://iperf.fr/iperf-download.php
@@ -72,8 +74,6 @@ class Analyzer():
         ----------
         algorith_name : str
             congestion control algorithm name
-        labels : list[str]
-            labels of data
         data : list[dict]
             rows of data (a dict). in a row, values are indexed by labels
         
@@ -83,110 +83,73 @@ class Analyzer():
         """
         def __init__(self, filename):
             self.algorithm_name = filename.split(".")[0]
-            self.labels = None
-            labels = None
             self.data = self.parser(filename)
+            print(filename)
 
         # time [ID] Interval Transfer Bandwidth Write/Err Rtry Cwnd/RTT NetPwr
         def parser(self, filename):
-
             with open(f"{data_shared_dir}/{filename}", mode='r') as stream:
-                lines = stream.readlines()
+                dados = json.load(stream)
 
-            # Pega as labels da primeira linha
+            start_timestamp = dados['start']['timestamp']['timesecs']
+
             data = []
-            self.labels = []
-
-            for line in lines[1:]:
-                #1752798646.766227555 [5] 0.2000-0.3000 sec  1.30 MBytes   109 Mbits/sec  11/0          0     1077K/21098 us  648.57
-                values = line.split()
-
-                row = {}
-               
-
-                self.labels.append("Time")
-                row.update({"Time":float(values[0])})
-                    
-            
-                self.labels.append("Transfer")
-                # value in Mbytes
-                row.update({"Transfer":self.to_MB(float(values[4]),values[5])})
+            for intervalo in dados['intervals']:
+                linha = {}
+                linha['Time'] = start_timestamp + intervalo['sum']['start']
+                linha['Transfer'] = intervalo['sum']['bytes'] / 1e6 # MBytes
+                linha['Bandwidth'] = intervalo['sum']['bits_per_second'] / 1e6
+                linha['Rtry'] = intervalo['sum']['retransmits']
+                linha['Cwnd'] = intervalo['streams'][0]['snd_cwnd'] / 1e3 # KB
+                linha['RTT'] = intervalo['streams'][0]['rtt'] / 1000
                 
-                self.labels.append("Bandwidth")
-                # values in Mbits
-                row.update({"Bandwidth":self.to_mb(float(values[6]),values[7])})
-                
-                self.labels.append("Rtry")
-                row.update({"Rtry":int(values[9])})
 
-                self.labels.append("Cwnd")
-                
-                cwnd = values[10].split("/")[0][:-1] # formato do cwnd é 2304K, por exemplo
-                row.update({"Cwnd":float(cwnd)})
-                            
-                self.labels.append("RTT")
-                rtt = values[10].split("/")[1]
-                row.update({"RTT":float(rtt)/1000})
+                data.append(linha)
 
-                data.append(row)
-            
             return data
- 
-        #As all data will be in Mbits
-        def to_mb(self, value, unit):
-            if unit == "Kbits/sec":
-                return value / 1e3
-            elif unit == "Mbits/sec":
-                return value 
-            elif unit == "Gbits/sec":
-                return value * 1e3
-            elif unit == "bits/sec":
-                return value / 1e6
-            return value
-        
-        def to_MB(self, value, unit):
-            if unit == "KBytes":
-                return value / 1024
-            elif unit == "MBytes":
-                return value
-            elif unit == "GBytes":
-                return value * 1024
-            elif unit == "Bytes":
-                return value / (1024 * 1024)
-            return value
-        
+               
         # End of data class
 
-    def __init__(self, file1, file2):
-        self.iperfdata1 = Analyzer.IperfData(file1)
-        self.iperfdata2 = Analyzer.IperfData(file2)
-        
-        # for row in self.iperfdata1.data: print(row)
-        # dados de cada conexao ficam no atributo 'data' das conexoes.
+    def __init__(self):
+        self.iperfdata = []
+        for i in range(1, args.num_bbr + 1):
+            file = f"bbr{i}.json"
+            self.iperfdata.append(Analyzer.IperfData(file))
+        for i in range(1, args.num_reno + 1):
+            file = f"reno{i}.json"
+            self.iperfdata.append(Analyzer.IperfData(file))
 
     def plot_timeseries(self,label):
-        
-        x1 = [ row["Time"] for row in self.iperfdata1.data]
-        x2 = [ row["Time"] for row in self.iperfdata2.data]
-        start_time = x1[0] if x1[0]<x2[0] else x2[0]
+        xs = []
+        for iperfdata in self.iperfdata:
+            xs.append([row["Time"] for row in iperfdata.data])
+        start_time = min(xs, key=lambda x: x[0])[0]
            
-
         start_time-=0.1 #INTERVALO DAS MEDIÇÕES DO IPERF. SE MUDAR, TEM QUE MUDAR AQUI TB!
         # Colocando os eixos um em relação ao outro, usando os timestamps
-        for i in range(0,len(x1)):
-            x1[i]-=start_time
-            x2[i]-=start_time
-    
-        y1 = [ row[label] for row in self.iperfdata1.data]
-        y2 = [ row[label] for row in self.iperfdata2.data]
+        for i in range(0,len(xs[0])):
+            for x in xs:
+                x[i]-=start_time
+        ys = []
+        for iperfdata in self.iperfdata:
+            ys.append([row[label] for row in iperfdata.data])
 
-        plt.figure(figsize=(12, 5))  
-        lines = plt.plot(x1, y1, x2, y2)
+        plt.figure(figsize=(12, 5))
+        
+        args_plot = []
+        for x, y in zip(xs, ys):
+            args_plot.extend([x, y])
+        lines = plt.plot(*args_plot)
 
-        l1,l2 = lines
-        plt.setp(l1,color='r',label=f"{self.iperfdata1.algorithm_name}")
-        plt.setp(l2,color='b',label=f"{self.iperfdata2.algorithm_name}")
-        plt.title(f"{label} on {self.iperfdata1.algorithm_name} vs {self.iperfdata2.algorithm_name}",visible=True)
+        for i, line in enumerate(lines):
+            algoritmo = self.iperfdata[i].algorithm_name[:-1]
+            if algoritmo == 'bbr':
+                cor = 'r'
+            else:
+                cor = 'b'
+            plt.setp(line, color=f'{cor}', label=f"{algoritmo}-{i}")
+
+        plt.title(f"{label} on bbr vs reno",visible=True)
 
         if label == "Bandwidth":
             ylabel = "Bandwidth (Mb/sec)"
@@ -203,14 +166,12 @@ class Analyzer():
         plt.ylabel(ylabel)
         plt.grid()
         plt.legend()
-        out = f"plots/{label}_{self.iperfdata1.algorithm_name}VS{self.iperfdata2.algorithm_name}.png"
+        out = f"plots/{label}_{args.num_bbr}bbrVS{args.num_reno}reno.png"
         print(f"Salvando grafico {out}")
         
         plt.savefig(out)  
         plt.close()
         pass
-
-    
 
 # Iniciando mininet
 
@@ -228,15 +189,17 @@ bbr_port=5001
 reno_port=5002
 print(f"h1 ip {h1.IP()}\nh2 ip {h2.IP()}")
 print("Abrindo servidores..",end='')
+serv_bbr = h2.popen(f"iperf3 -s --port {bbr_port}")
+serv_reno = h2.popen(f"iperf3 -s --port {reno_port}")
 
 bbr_processes = []
 for i in range(args.num_bbr):
-    processo = h1.popen(f"iperf -c {h2.IP()} -p {bbr_port} -i 0.1 -t {args.test_duration} --linux-congestion bbr | while read line; do echo \"$(date +%s.%N) $line\"; done > {data_shared_dir}/bbr{i+1}.txt", shell=True)
+    processo = h1.popen(f"iperf3 -c {h2.IP()} --json -p {bbr_port} -i 0.1 -t {args.test_duration} --linux-congestion bbr > {data_shared_dir}/bbr{i+1}.json", shell=True)
     bbr_processes.append(processo)
 
 reno_processes = []
 for i in range(args.num_reno):
-    processo = h1.popen(f"iperf -c {h2.IP()} -p {reno_port} -i 0.1 -t {args.test_duration} --linux-congestion reno| while read line; do echo \"$(date +%s.%N) $line\"; done > {data_shared_dir}/reno{i+1}.txt", shell=True)
+    processo = h1.popen(f"iperf3 -c {h2.IP()} --json -p {reno_port} -i 0.1 -t {args.test_duration} --linux-congestion reno > {data_shared_dir}/reno{i+1}.json", shell=True)
     reno_processes.append(processo)
 sleep(2)
 
@@ -262,20 +225,20 @@ for process in reno_processes:
 
 net.stop()
 
-# Popen("cat /tmp/bbr.txt /tmp/reno.txt",shell=True).wait()
+# Popen("cat /tmp/bbr.json /tmp/reno.json",shell=True).wait()
 
-Popen(f"sudo chmod 666 {data_shared_dir}/bbr*.txt {data_shared_dir}/reno*.txt",shell=True).wait()
+Popen(f"sudo chmod 666 {data_shared_dir}/bbr*.json {data_shared_dir}/reno*.json",shell=True).wait()
 print("[Formatando dados]")
-Popen(f"sed -i '/sec\|Cwnd/!d' {data_shared_dir}/reno*.txt {data_shared_dir}/bbr*.txt ", shell=True).wait()
+#Popen(f"sed -i '/sec\|Cwnd/!d' {data_shared_dir}/reno*.json {data_shared_dir}/bbr*.json ", shell=True).wait()
 
 # TODO: Parametrizar o analyzer para considerar todos os cenários
-analise = Analyzer("bbr.txt","reno.txt")
+analise = Analyzer()
 
 # print("[Plotando graficos]")
 
-# analise.plot_timeseries("Bandwidth")
-# analise.plot_timeseries("RTT")
-# analise.plot_timeseries("Rtry")
+analise.plot_timeseries("Bandwidth")
+analise.plot_timeseries("RTT")
+analise.plot_timeseries("Rtry")
 
 print("[Liberando recursos]")
 Popen("sudo mn -c 2> /dev/null", shell=True).wait()
