@@ -73,4 +73,26 @@ Nesse caso, os dados que obtivemos sobre os tempos de download da página web fo
 | 100             | 1.8 | 0.05           |
 
 #### run_competition.sh (Parte 4)
+Esse script executa simulações de todos os cenários da parte 4 (exceto o bônus). Para executá-lo, use:
 
+```shell
+sudo ./run_competition.sh
+```
+
+A saída dele é no formato de plots, 3 para cada cenário, sendo eles:
+1. `Bandwidth_1bbrVS1reno.png`
+1. `Bandwidth_1bbrVS2reno.png`
+1. `Bandwidth_2bbrVS2reno.png`
+1. `Rtry_1bbrVS1reno.png`
+1. `Rtry_1bbrVS2reno.png`
+1. `Rtry_2bbrVS2reno.png`
+1. `RTT_1bbrVS1reno.png`
+1. `RTT_1bbrVS2reno.png`
+1. `RTT_2bbrVS2reno.png`
+
+
+#### Cenário bônus
+Observamos que o código que gera o gráfico de eficiência versus fairness demora muito para terminar de rodar na máquina virtual, e por isso, sugerimos que rode na sua máquina física. Para executá-lo:
+```shell
+python3 competition.py -nbbr 1 -nreno 1 --task gif
+```
